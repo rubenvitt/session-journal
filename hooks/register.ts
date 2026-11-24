@@ -175,7 +175,8 @@ async function journal($: EngineInterface, kind: Kind, config: Config): Promise<
     if (!reply.isAnswered) return { written: false, reason: `kein Ergebnis (${reply.reason})` }
 
     const entry = parseEntry(await $.session.redact(reply.text), defaultSphere)
-    if (entry === undefined) return { written: false, reason: 'SKIP' }
+    if (entry === undefined)
+      return { written: false, reason: /^\s*SKIP\b/i.test(reply.text) ? 'SKIP' : 'Antwort nicht lesbar' }
 
     const dir = await expandHome($, config.journalDir)
     const end = await $.clock.now()
@@ -190,6 +191,8 @@ async function journal($: EngineInterface, kind: Kind, config: Config): Promise<
 
 function report($: EngineInterface, r: Outcome) {
   if (r.written) $.ui.toast(`📓 Journal (${r.entry.sphaere}): ${r.entry.titel}`)
+  // Trial phase: make silent failures visible; SKIP stays quiet.
+  else if (r.reason !== 'SKIP' && r.reason !== 'läuft schon') $.ui.log(`session-journal: kein Eintrag (${r.reason})`)
 }
 
 export const register: Register = (on, options) => {
@@ -229,7 +232,7 @@ export const register: Register = (on, options) => {
     $.clock.after(0, () => {
       journal($, 'auto', config).then(
         r => report($, r),
-        err => $.ui.log(`session-journal: ${String(err)}`, { to: 'debug' }),
+        err => $.ui.log(`session-journal: Fehler ${String(err)}`),
       )
     })
     return result

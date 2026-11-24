@@ -1,0 +1,19 @@
+{
+  "name": "session-journal",
+  "version": "0.1.0",
+  "description": "Schreibt abgeschlossene Arbeitsblöcke einer Claude-Code-Session automatisch in ein Tagesjournal (Markdown, getrennt nach privat/arbeit).",
+  "userConfig": {
+    "journal_dir": {
+      "type": "string",
+      "title": "Journal-Ordner",
+      "description": "Ordner für die Journal-Dateien; darunter privat/ und arbeit/ mit einer Datei pro Tag.",
+      "default": "~/journal"
+    },
+    "work_paths": {
+      "type": "string",
+      "title": "Arbeits-Pfade",
+      "description": "Kommagetrennte Pfadteile; Sessions darin gelten standardmäßig als Sphäre arbeit (das Modell entscheidet zuletzt).",
+      "default": "/dev/work/"
+    }
+  }
+}

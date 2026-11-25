@@ -24,13 +24,14 @@ type Entry = {
 
 type Outcome =
   | { written: true; entry: Entry; file: string }
-  | { written: false; reason: string }
+  | { written: false; reason: string; from?: number }
 
 // Module state, reset on reload; the gate simply starts over then.
 let lastAttemptAt = 0
 let promptsSinceAttempt = 0
 let blockStartAt: number | undefined
 let lastEntryAt: number | undefined
+let lastEntryTitle: string | undefined
 let isBusy = false
 
 const fmt = (ms: number, opts: Intl.DateTimeFormatOptions) =>
@@ -221,7 +222,7 @@ async function journal($: EngineInterface, kind: Kind, config: Config): Promise<
 
     const entry = parseEntry(await $.session.redact(reply.text), defaultSphere)
     if (entry === undefined)
-      return { written: false, reason: /^\s*SKIP\b/i.test(reply.text) ? 'SKIP' : 'Antwort nicht lesbar' }
+      return { written: false, reason: /^\s*SKIP\b/i.test(reply.text) ? 'SKIP' : 'Antwort nicht lesbar', from }
 
     const end = await $.clock.now()
     let file: string
@@ -234,12 +235,20 @@ async function journal($: EngineInterface, kind: Kind, config: Config): Promise<
       file = await appendEntry($, dir, entry, renderEntry(entry, from, end, sessionId, kind), end)
     }
     lastEntryAt = end
+    lastEntryTitle = entry.titel
     blockStartAt = undefined
     return { written: true, entry, file }
   } finally {
     isBusy = false
   }
 }
+
+// Says why /journal wrote nothing: the auto hook may have just covered the block.
+const skipText = (from: number) =>
+  `📓 Nichts Neues seit ${hhmm(from)} Uhr` +
+  (lastEntryAt !== undefined && lastEntryTitle !== undefined
+    ? `, letzter Eintrag ${hhmm(lastEntryAt)}: „${lastEntryTitle}“`
+    : '')
 
 function report($: EngineInterface, r: Outcome) {
   if (r.written) $.ui.toast(`📓 Journal (${r.entry.sphaere}): ${r.entry.titel}`)
@@ -298,7 +307,9 @@ export const register: Register = (on, options) => {
     return {
       text: r.written
         ? `📓 Eintrag „${r.entry.titel}“ → ${r.file}`
-        : `📓 Kein Eintrag: ${r.reason}`,
+        : r.reason === 'SKIP' && r.from !== undefined
+          ? skipText(r.from)
+          : `📓 Kein Eintrag: ${r.reason}`,
       isTextDisplayOnly: true,
     }
   })

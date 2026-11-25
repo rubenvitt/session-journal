@@ -15,7 +15,7 @@ const ENTRY = JSON.stringify({
   offen: '',
 })
 
-function engine(on: On, reply: string) {
+function engine(on: On, reply: string | (() => string)) {
   const files = new Map<string, string>()
   const forks: string[] = []
   on('command.register', () => ({ value: { command: 'journal' } }))
@@ -28,7 +28,7 @@ function engine(on: On, reply: string) {
   on('session.redact', (_, e) => ({ value: (e as { text: string }).text }))
   on('model.fork', (_, e) => {
     forks.push((e as { prompt: string }).prompt)
-    return { value: { isAnswered: true, text: reply, usage: {} } } as never
+    return { value: { isAnswered: true, text: typeof reply === 'string' ? reply : reply(), usage: {} } } as never
   })
   on('fs.exists', (_, e) => ({ value: files.has((e as { path: string }).path) }))
   on('fs.read', (_, e) => ({ value: files.get((e as { path: string }).path) ?? '' }) as never)
@@ -82,4 +82,22 @@ test('SKIP writes nothing', async ($, on) => {
   await clock.settle()
   expect(world.forks.length).toBe(1)
   expect(world.files.size).toBe(0)
+})
+
+test('/journal after an auto entry names the last entry on SKIP', async ($, on) => {
+  const clock = mock.clock(on, { now: START })
+  mock.env(on, { HOME: '/home/test' })
+  let reply = ENTRY
+  engine(on, () => reply)
+
+  await $.session.start({ cwd: '/home/test/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'hallo' } as never)
+  await clock.advance(31 * MIN)
+  await $.turn.complete({ answer: 'ok', reason: 'answer', durationMs: 1, isAborted: false, turnId: 't1' } as never)
+  await clock.settle()
+
+  reply = 'SKIP'
+  await clock.advance(5 * MIN)
+  const out = await $.command.run({ command: 'journal', args: '' } as never)
+  expect(JSON.stringify(out)).toContain('Nichts Neues seit 09:31 Uhr, letzter Eintrag 09:31: „Beispielblock“')
 })

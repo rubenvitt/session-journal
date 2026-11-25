@@ -14,6 +14,12 @@
       "title": "Arbeits-Pfade",
       "description": "Kommagetrennte Pfadteile; Sessions darin gelten standardmäßig als Sphäre arbeit (das Modell entscheidet zuletzt).",
       "default": "/dev/work/"
+    },
+    "cockpit_url": {
+      "type": "string",
+      "title": "Vault-Cockpit-URL",
+      "description": "Nur in Cloud-Sessions (CLAUDE_CODE_REMOTE=true): Einträge gehen per POST <url>/journal ans Cockpit; Token aus SESSION_JOURNAL_TOKEN.",
+      "default": "https://vault.rubeen.dev"
     }
   }
 }

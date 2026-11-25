@@ -158,7 +158,52 @@ async function appendEntry($: EngineInterface, dir: string, entry: Entry, text: 
   return file
 }
 
-type Config = { journalDir: string; workPaths: string[] }
+type Config = { journalDir: string; workPaths: string[]; cockpitUrl: string }
+
+// In a cloud session the container's files are gone afterwards: the entry goes
+// to the Vault Cockpit (POST /journal) instead, which appends it to the same
+// day file in the vault. One retry; the cockpit drops duplicates.
+async function postEntry(
+  $: EngineInterface,
+  config: Config,
+  entry: Entry,
+  from: number,
+  to: number,
+  sessionId: string,
+  kind: Kind,
+): Promise<{ ok: true; path: string; duplicate: boolean } | { ok: false; reason: string }> {
+  const token = await $.env.get('SESSION_JOURNAL_TOKEN')
+  if (token === undefined || token === '') return { ok: false, reason: 'kein SESSION_JOURNAL_TOKEN' }
+  const url = `${config.cockpitUrl.replace(/\/+$/, '')}/journal`
+  const body = JSON.stringify({
+    ...entry,
+    from: new Date(from).toISOString(),
+    to: new Date(to).toISOString(),
+    session: sessionId,
+    kind,
+    source: 'code-web',
+  })
+  let last = ''
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await $.http.fetch(url, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body,
+      })
+      let parsed: { path?: string; reason?: string; error?: string } = {}
+      try {
+        parsed = JSON.parse(res.text)
+      } catch {}
+      if (res.ok) return { ok: true, path: parsed.path ?? url, duplicate: parsed.reason === 'duplicate' }
+      last = `Cockpit ${res.status}${parsed.error ? `: ${parsed.error}` : ''}`
+      if (res.status < 500) break
+    } catch (err) {
+      last = `Cockpit nicht erreichbar (${String(err)})`
+    }
+  }
+  return { ok: false, reason: last }
+}
 
 async function journal($: EngineInterface, kind: Kind, config: Config): Promise<Outcome> {
   if (isBusy) return { written: false, reason: 'läuft schon' }
@@ -178,9 +223,16 @@ async function journal($: EngineInterface, kind: Kind, config: Config): Promise<
     if (entry === undefined)
       return { written: false, reason: /^\s*SKIP\b/i.test(reply.text) ? 'SKIP' : 'Antwort nicht lesbar' }
 
-    const dir = await expandHome($, config.journalDir)
     const end = await $.clock.now()
-    const file = await appendEntry($, dir, entry, renderEntry(entry, from, end, sessionId, kind), end)
+    let file: string
+    if ((await $.env.get('CLAUDE_CODE_REMOTE')) === 'true') {
+      const sent = await postEntry($, config, entry, from, end, sessionId, kind)
+      if (!sent.ok) return { written: false, reason: sent.reason }
+      file = sent.duplicate ? `${sent.path} (schon vorhanden)` : sent.path
+    } else {
+      const dir = await expandHome($, config.journalDir)
+      file = await appendEntry($, dir, entry, renderEntry(entry, from, end, sessionId, kind), end)
+    }
     lastEntryAt = end
     blockStartAt = undefined
     return { written: true, entry, file }
@@ -203,6 +255,7 @@ export const register: Register = (on, options) => {
       .split(',')
       .map(w => w.trim())
       .filter(w => w !== ''),
+    cockpitUrl: str(options?.cockpit_url, 'https://vault.rubeen.dev'),
   }
 
   on('session.start', async ($, e, next) => {

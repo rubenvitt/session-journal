@@ -46,7 +46,7 @@ claude plugin list 2>/dev/null | grep -q 'session-journal@session-journal' \
 
 Das Repo ist privat: Kommt die Umgebung nicht per GitHub-Anmeldung heran, das Repo in der Umgebung als Quelle anhängen und `marketplace add <Pfad zum Checkout>` nehmen.
 
-In Sessions der Claude-App laufen Mods nicht; dort schreibt der Skill `/journal` über das MCP-Werkzeug `vault_journal`.
+In Sessions der Claude-App laufen Mods nicht; dort schreibt der Skill `/journal-save` über das MCP-Werkzeug `vault_journal`.
 
 ## Kosten
 
